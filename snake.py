@@ -8,7 +8,7 @@ class Snake_Game:
     def __init__(self, show=True):
         self.show = show
         random.seed()
-        self.snake = [(2,1), (1,1)]
+        self.snake = [(4,5), (4,4)]
         self.direction = 0
         self.pellet = (0, 0)
         self._new_pellet()
