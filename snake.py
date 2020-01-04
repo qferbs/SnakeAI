@@ -61,11 +61,11 @@ class Snake_Game:
 
         return head
 
-    ''' returns the current game state in the form of (snake, pellet, score),
-        where snake is an array of tuples (x, y), pellet is a tuple (x, y),
-        and score is an integer. '''
+    ''' returns the current game state in the form of (head, body, pellet, score),
+        where head is a tuple(x, y), body is an array of tuples (x, y), pellet
+        is a tuple (x, y), and score is an integer. '''
     def get_state(self):
-        return (self.snake, self.pellet, self.score)
+        return (self.snake[0], self.snake[1:], self.pellet, self.score)
 
     ''' queues snake to move in the direction given through param dir,
         which corresponds to:
@@ -78,7 +78,7 @@ class Snake_Game:
 
     def mvstep(self, dir):
         self.move(dir)
-        self.step()
+        return self.step()
 
     def _show(self):
         for y in reversed(range(0, self.grid_size)):
