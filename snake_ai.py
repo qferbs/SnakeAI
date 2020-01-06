@@ -4,10 +4,27 @@ import numpy as np
 from snake import Snake_Game
 import random
 
+grid_x = 5
+grid_y = 5
+
+def format_state(state):
+    out = np.full((grid_x, grid_y), 0.5)
+
+    head = state[0]
+    body = state[1]
+    pellet = state[2]
+
+    out[head[0]][head[1]] = 1
+    for body_part in body:
+        out[body_part[0]][body_part[1]] = 0.9
+    out[pellet[0]][pellet[1]] = 0
+
+    return out
+
+
+
 class Snake_AI:
 
-    grid_x = 10
-    grid_y = 10
     gamma = 0.9
 
     def __init__(self):
@@ -25,7 +42,10 @@ class Snake_AI:
             next_state: state achieved by move.
             end: boolean which is true if the game ended from this move. '''
     def train_short_memory(self, state, move, reward, next_state, end):
+        # TODO: optimize memory encoding to reduce total size
         self.memory.append((state, move, reward, next_state, end))
+        state = format_state(state)
+        next_state = format_state(next_state)
         target_val = reward
         if not end:
             target = reward + self.gamma * np.amax(self.model.predict(np.array([next_state]))[0])
@@ -36,12 +56,18 @@ class Snake_AI:
     ''' trains the NN on earlier positions, allowing rewards to propogate
         throughout the model. '''
     def replay_train(self):
+        if(len(self.memory) > 3000):
+            length = len(self.memory)
+            self.memory = self.memory[length - 3000:length]
         if(len(self.memory) > 1000):
             batch = random.sample(self.memory, 1000)
         else:
             batch = self.memory
         for state, move, reward, next_state, end in batch:
+            state = format_state(state)
+            next_state = format_state(next_state)
             target_val = reward
+
             if not end:
                 target = reward + self.gamma * np.amax(self.model.predict(
                     np.array([next_state]))[0])
@@ -54,13 +80,15 @@ class Snake_AI:
         if(state[3] > state_old[3]):
             reward += 10
         if(end):
-            reward -= 100
+            reward -= 10
+        '''
         x1 = np.abs(state[0][0] - state[2][0])
         x2 = np.abs(state[0][1] - state[2][1])
         x3 = np.abs(state_old[0][0] - state_old[2][0])
         x4 = np.abs(state_old[0][1] - state_old[2][1])
         if(np.hypot(x1, x2) < np.hypot(x3, x4)):
-            reward += 1
+            reward += 2
+        '''
         return reward
             
 
@@ -69,14 +97,16 @@ class Snake_AI:
         the x-axis, and the output an array 4 representing each possible move '''
     def _get_model(self):
         model = keras.Sequential([
-            keras.layers.Flatten(input_shape=(self.grid_x*3, self.grid_y)),
+            keras.layers.Flatten(input_shape=(grid_x, grid_y)),
+            keras.layers.Dense(128, activation='relu'),
+            keras.layers.Dropout(0.2),
             keras.layers.Dense(128, activation='relu'),
             keras.layers.Dropout(0.2),
             keras.layers.Dense(128, activation='relu'),
             keras.layers.Dense(4, activation='softmax'),
         ])
         
-        model.compile(optimizer='adam',
+        model.compile(optimizer=keras.optimizers.Adam(0.0005),
                 loss='mse')
 
         return model
