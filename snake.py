@@ -3,12 +3,12 @@ import random
 from enum import Enum
 
 class Snake_Game:
-    grid_size = 10    
+    grid_size = 5
 
     def __init__(self, show=True):
         self.show = show
         random.seed()
-        self.snake = [(4,5), (4,4)]
+        self.snake = np.array([(1,2), (2,2)], dtype=np.uint8)
         self.direction = 0
         self.pellet = (0, 0)
         self._new_pellet()
