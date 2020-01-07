@@ -30,7 +30,6 @@ class Snake_AI:
     def __init__(self):
         self.model = self._get_model()
         self.memory = []
-        self.short_memory = []
 
     ''' trains the network based on immediate state change and reward and saves
         input for later replay training.
@@ -42,7 +41,6 @@ class Snake_AI:
             next_state: state achieved by move.
             end: boolean which is true if the game ended from this move. '''
     def train_short_memory(self, state, move, reward, next_state, end):
-        # TODO: optimize memory encoding to reduce total size
         self.memory.append((state, move, reward, next_state, end))
         state = format_state(state)
         next_state = format_state(next_state)
@@ -56,6 +54,8 @@ class Snake_AI:
     ''' trains the NN on earlier positions, allowing rewards to propogate
         throughout the model. '''
     def replay_train(self):
+        # TODO: save memory on disk and develop algorithm load pieces of it selected
+        # through a Monte Carlo algorithm to prevent RAM overflow
         if(len(self.memory) > 3000):
             length = len(self.memory)
             self.memory = self.memory[length - 3000:length]
@@ -98,11 +98,7 @@ class Snake_AI:
     def _get_model(self):
         model = keras.Sequential([
             keras.layers.Flatten(input_shape=(grid_x, grid_y)),
-            keras.layers.Dense(128, activation='relu'),
-            keras.layers.Dropout(0.2),
-            keras.layers.Dense(128, activation='relu'),
-            keras.layers.Dropout(0.2),
-            keras.layers.Dense(128, activation='relu'),
+            keras.layers.Dense(64, activation='relu'),
             keras.layers.Dense(4, activation='softmax'),
         ])
         
