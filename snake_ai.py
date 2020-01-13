@@ -1,108 +1,128 @@
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+import random
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-import numpy as np
 from snake import Snake_Game
-import random
 
-grid_x = 5
-grid_y = 5
+grid_x = 10
+grid_y = 10
 
-def format_state(state):
-    out = np.full((grid_x, grid_y), 0.5)
+@dataclass(eq=False, frozen=True)
+class State:
+    body : List[Tuple[int, int]]
+    pellet : Tuple[int, int]
 
-    head = state[0]
-    body = state[1]
-    pellet = state[2]
+    def __hash__(self):
+        return int.from_bytes(np.array(self.body + self.pellet).tobytes(), 'big')
 
-    out[head[0]][head[1]] = 1
+    def __eq__(self, other):
+        return np.all(self.body == other.body) and self.pellet == other.pellet
+
+def format_state(state) -> np.ndarray:
+    out = np.full((grid_x, grid_y, 3), 0.0)
+
+    head = state.body[0]
+    body = state.body[1:]
+    pellet = state.pellet
+
+    out[head[0]][head[1]][0] = 1.0
     for body_part in body:
-        out[body_part[0]][body_part[1]] = 0.9
-    out[pellet[0]][pellet[1]] = 0
+        out[body_part[0]][body_part[1]][1] = 1.0
+    out[pellet[0]][pellet[1]][2] = 1.0
 
     return out
-
-
 
 class Snake_AI:
 
     gamma = 0.9
+    batch_size = 1024
+    minibatch_size = 32
+    outlier_threshold = 0.6
+    outlier_epochs = 1
+    history = []
 
     def __init__(self):
-        self.model = self._get_model()
-        self.memory = []
+        self._model = self._get_model()
+        self.memory = set([])
 
-    ''' trains the network based on immediate state change and reward and saves
-        input for later replay training.
-        params:
-            state: game information in matrix required for NN input.
-            move: array of length 4 with each index representing a move.
-                  the index with max value is the move that was performed.
-            reward: value of reward given for this move.
-            next_state: state achieved by move.
-            end: boolean which is true if the game ended from this move. '''
-    def train_short_memory(self, state, move, reward, next_state, end):
-        self.memory.append((state, move, reward, next_state, end))
-        state = format_state(state)
-        next_state = format_state(next_state)
-        target_val = reward
-        if not end:
-            target = reward + self.gamma * np.amax(self.model.predict(np.array([next_state]))[0])
-        target_val_new = self.model.predict(np.array([state]))
-        target_val_new[0][np.argmax(move)] = target_val
-        self.model.fit(np.array([state]), target_val_new, epochs=1, verbose=0)
+    def get_best_action(self, state : State) -> int:
+        move_weights = self._get_q([state])[0]
+        maximum = np.amax(move_weights)
+        print(move_weights)
+        return np.random.choice(np.where(move_weights == maximum)[0])
 
-    ''' trains the NN on earlier positions, allowing rewards to propogate
-        throughout the model. '''
-    def replay_train(self):
-        # TODO: save memory on disk and develop algorithm load pieces of it selected
-        # through a Monte Carlo algorithm to prevent RAM overflow
-        if(len(self.memory) > 3000):
-            length = len(self.memory)
-            self.memory = self.memory[length - 3000:length]
-        if(len(self.memory) > 1000):
-            batch = random.sample(self.memory, 1000)
+    def observe_reward(self, state : State, state_new : State, action : int,
+           reward : int, end : bool) -> None:
+        self.memory.add((state, state_new, action, reward, end))
+
+    def experience_replay(self):
+        mem = np.array(list(self.memory))
+        outliers = []
+        if(len(self.memory) > self.batch_size):
+            # take random sample of memory
+            batch = mem[np.random.choice(mem.shape[0], self.batch_size, replace=False), :]
         else:
-            batch = self.memory
-        for state, move, reward, next_state, end in batch:
-            state = format_state(state)
-            next_state = format_state(next_state)
-            target_val = reward
+            batch = mem
+        np.random.shuffle(batch)
+        for minibatch in [batch[i:i+self.minibatch_size] for i in range(0,
+                int(batch.shape[0] / self.minibatch_size))]:
+            # train on minibatch
+            minibatch = minibatch.transpose() 
 
-            if not end:
-                target = reward + self.gamma * np.amax(self.model.predict(
-                    np.array([next_state]))[0])
-            target_val_new = self.model.predict(np.array([state]))
-            target_val_new[0][np.argmax(move)] = target_val
-            self.model.fit(np.array([state]), target_val_new, epochs=1, verbose=0)
+            states = [format_state(s) for s in minibatch[0]]
+            targets = self._get_q(minibatch[0])
+            state_new_q = self._get_q(minibatch[1])
 
-    def get_reward(self, state_old, state, end):
-        reward = 0
-        if(state[3] > state_old[3]):
-            reward += 10
-        if(end):
-            reward -= 10
-        '''
-        x1 = np.abs(state[0][0] - state[2][0])
-        x2 = np.abs(state[0][1] - state[2][1])
-        x3 = np.abs(state_old[0][0] - state_old[2][0])
-        x4 = np.abs(state_old[0][1] - state_old[2][1])
-        if(np.hypot(x1, x2) < np.hypot(x3, x4)):
-            reward += 2
-        '''
-        return reward
+            for i in range(0, self.minibatch_size):
+                new_q_val = minibatch[3][i] + \
+                        self.gamma * minibatch[4][i] * np.amax(state_new_q[i])
+                if(np.abs(targets[i][minibatch[2][i]] - new_q_val) > self.outlier_threshold):
+                    outliers.append(minibatch.transpose()[i])
+                targets[i][minibatch[2][i]] = new_q_val
+
+            # (state, state_new, action, reward, end)
+         
+            self.history.append(self._model.fit(np.array(states), np.array(targets)))
+
+        if(len(outliers) == 0):
+            return
+        #train on outliers
+        for j in range(0, self.outlier_epochs):
+            minibatch = np.array(outliers).transpose() 
+
+            states = [format_state(s) for s in minibatch[0]]
+            targets = self._get_q(minibatch[0])
+            state_new_q = self._get_q(minibatch[1])
             
+            for i in range(0, minibatch.shape[1]):
+                targets[i][minibatch[2][i]] = minibatch[3][i] + \
+                        self.gamma * minibatch[4][i] * np.amax(state_new_q[i])
 
-    ''' Gets neural network's model. the input is three matrices of binary map data
-        (position of head, position of body, and position of pellet) concatenated in
-        the x-axis, and the output an array 4 representing each possible move '''
-    def _get_model(self):
+            self._model.fit(np.array(states), np.array(targets))
+
+    def _get_q(self, states : List[State]) -> np.ndarray:
+        st = np.array([format_state(s) for s in states])
+        return self._model.predict(st)
+
+    def _get_model(self) -> keras.Model:
         model = keras.Sequential([
-            keras.layers.Flatten(input_shape=(grid_x, grid_y)),
-            keras.layers.Dense(64, activation='relu'),
-            keras.layers.Dense(4, activation='softmax'),
+            keras.layers.Conv2D(3, 3, padding='same', input_shape=(grid_x, grid_y, 3)),
+            keras.layers.Conv2D(3, 3, padding='same', activation='elu'),
+            keras.layers.Flatten(),
+            keras.layers.Dense(128, activation='elu'),
+            keras.layers.Dropout(0.2),
+            keras.layers.Dense(128, activation='elu'),
+            keras.layers.Dropout(0.2),
+            keras.layers.Dense(128, activation='elu'),
+            keras.layers.Dropout(0.2),
+            keras.layers.Dense(128, activation='elu'),
+            keras.layers.Dropout(0.2),
+            keras.layers.Dense(3, activation='softsign'),
         ])
         
-        model.compile(optimizer=keras.optimizers.Adam(0.0005),
+        model.compile(optimizer=keras.optimizers.Adam(0.01),
                 loss='mse')
 
         return model

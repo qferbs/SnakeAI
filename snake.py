@@ -1,20 +1,19 @@
 import numpy as np
-import random
-from enum import Enum
+import curses
 
 class Snake_Game:
-    grid_size = 5
+    grid_size = 10
 
-    def __init__(self, show=True):
+    def __init__(self, show=False, stdscr=None):
         self.show = show
-        random.seed()
-        self.snake = np.array([(1,2), (2,2)], dtype=np.uint8)
+        self.snake = np.array([(4,5), (5,5)], dtype=np.uint8)
         self.direction = 0
         self.pellet = (0, 0)
         self._new_pellet()
         self.score = 0
 
         if(show):
+            self.stdscr = stdscr
             self._show()
     
     ''' Applies one game step, moving the snake in the direction of
@@ -61,45 +60,64 @@ class Snake_Game:
 
         return head
 
-    ''' returns the current game state in the form of (head, body, pellet, score),
-        where head is a tuple(x, y), body is an array of tuples (x, y), pellet
-        is a tuple (x, y), and score is an integer. '''
     def get_state(self):
-        return (self.snake[0], self.snake[1:], self.pellet, self.score)
+        return (self.snake, self.pellet, self.score)
 
     ''' queues snake to move in the direction given through param dir,
         which corresponds to:
-            right: 0
-            up: 1
-            left: 2
-            down: 3 '''
-    def move(self, dir):
-        self.direction = dir
+            turn left: 0
+            go straight: 1
+            turn right: 2 '''
+    def move(self, move):
+        if(move == 0):
+            self.direction += 1
+        elif(move == 2):
+            self.direction -= 1
+        if(self.direction > 3):
+            self.direction = 0
+        elif(self.direction < 0):
+            self.direction = 3
 
     def mvstep(self, dir):
         self.move(dir)
         return self.step()
 
     def _show(self):
-        for y in reversed(range(0, self.grid_size)):
-            out = ''
-            for x in range(0, self.grid_size):
-                if(np.any([np.all((x, y) == s) for s in self.snake])):
-                    out = out + 's'
-                elif((x, y) == self.pellet):
-                    out = out + 'p'
-                else:
-                    out = out + '-'
-                
-            print(out)
+        if(self.stdscr == None):
+            print(''.join(['=' for i in range(0, self.grid_size)]))
+            for y in reversed(range(0, self.grid_size)):
+                out = ''
+                for x in range(0, self.grid_size):
+                    if(np.all((x, y) == self.snake[0])):
+                        out = out + '@'
+                    elif(np.any([np.all((x, y) == s) for s in self.snake[1:]])):
+                        out = out + '0'
+                    elif((x, y) == self.pellet):
+                        out = out + '$'
+                    else:
+                        out = out + ' '
+                    
+                print(out)
+        else:
+            self.stdscr.clear()
+            self.stdscr.addch(self.grid_size - self.snake[0][1], self.snake[0][0], '@')
+            self.stdscr.addch(self.grid_size - self.pellet[1], self.pellet[0], '$')
+            for body in self.snake[1:]:
+                self.stdscr.addch(self.grid_size - body[1], body[0], '*')
+            self.stdscr.refresh()
 
     # places a new pellet, making sure it is not inside snake
     def _new_pellet(self):
-        self.pellet = (random.randint(0, self.grid_size - 1),
-                random.randint(0, self.grid_size - 1))
-        while(np.any([self.pellet == s for s in self.snake])):
-            self.pellet = (random.randint(0, self.grid_size - 1),
-                    random.randint(0, self.grid_size - 1))
+        self.pellet = (np.random.randint(0, self.grid_size),
+                np.random.randint(0, self.grid_size))
+        i = 0
+        while(np.any([self.pellet == tuple(s) for s in self.snake])):
+            if(i == 1000):
+                import ipdb; ipdb.set_trace()
+
+            self.pellet = (np.random.randint(0, self.grid_size),
+                    np.random.randint(0, self.grid_size))
+            i += 1
 '''
 snake = Snake_Game()
 print(snake.get_state())
